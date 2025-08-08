@@ -35,12 +35,12 @@ A lightweight desktop application that transcribes speech to text using Groq's W
 ### Download Pre-built Releases
 
 #### Using the Installer (Recommended)
-1. Download `Eco-Setup.exe` from [Releases](https://github.com/YOUR-USERNAME/eco/releases)
+1. Download `Eco-Setup.exe` from [Releases](https://github.com/Daniwax/eco/releases)
 2. Run the installer and follow the prompts
 3. Launch "Eco" from Start Menu or Desktop
 
 #### Using the Portable Version
-1. Download `Eco-Portable.exe` from [Releases](https://github.com/YOUR-USERNAME/eco/releases)
+1. Download `Eco-Portable.exe` from [Releases](https://github.com/Daniwax/eco/releases)
 2. Run directly - no installation needed
 3. Note: Portable version may show default Electron icon
 
@@ -182,9 +182,9 @@ Created by Daniel
 
 ## Support
 
-- 🐛 [Report Issues](https://github.com/YOUR-USERNAME/eco/issues)
-- 💡 [Request Features](https://github.com/YOUR-USERNAME/eco/issues/new)
-- 📖 [Documentation](https://github.com/YOUR-USERNAME/eco/wiki)
+- 🐛 [Report Issues](https://github.com/Daniwax/eco/issues)
+- 💡 [Request Features](https://github.com/Daniwax/eco/issues/new)
+- 📖 [Documentation](https://github.com/Daniwax/eco/wiki)
 
 ## Acknowledgments
 

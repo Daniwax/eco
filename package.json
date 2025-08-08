@@ -30,12 +30,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR-USERNAME/eco.git"
+    "url": "https://github.com/Daniwax/eco.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR-USERNAME/eco/issues"
+    "url": "https://github.com/Daniwax/eco/issues"
   },
-  "homepage": "https://github.com/YOUR-USERNAME/eco#readme",
+  "homepage": "https://github.com/Daniwax/eco#readme",
   "devDependencies": {
     "@babel/preset-env": "^7.28.0",
     "babel-jest": "^29.7.0",
