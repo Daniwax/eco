@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Eco</title>
+  <!-- 
+    Eco - UI and Recording Logic
+    
+    This file contains the user interface and recording functionality.
+    It handles audio recording, transcription via Groq API, and clipboard integration.
+    
+    Features:
+    - Color-coded visual states (purple/orange/blue/green)
+    - Real-time audio recording with MediaRecorder API
+    - Speech-to-text using Groq's Whisper model
+    - Automatic clipboard copy of transcribed text
+    - Minimal, floating button interface
+  -->
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-app-region: drag;
+      position: relative;
+      overflow: hidden;
+      margin: 0;
+      padding: 10px;
+    }
+    
+    /* Subtle inner glow effect */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      background: radial-gradient(circle at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    
+    /* State color changes */
+    body.listening {
+      background: linear-gradient(135deg, #ff9800, #ff6b35);
+    }
+    
+    body.processing {
+      background: linear-gradient(135deg, #2196f3, #1976d2);
+    }
+    
+    body.success {
+      background: linear-gradient(135deg, #4caf50, #45a049);
+    }
+    
+    body.error {
+      background: linear-gradient(135deg, #f44336, #d32f2f);
+    }
+    
+    .record-btn {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.15));
+      border: 3px solid rgba(255, 255, 255, 0.95);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-app-region: no-drag;
+      box-shadow: 
+        0 4px 20px rgba(0, 0, 0, 0.2),
+        inset 0 2px 0 rgba(255, 255, 255, 0.4);
+      z-index: 1;
+    }
+    
+    .record-btn:hover {
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.2));
+      transform: scale(1.05);
+      box-shadow: 
+        0 6px 25px rgba(0, 0, 0, 0.25),
+        inset 0 2px 0 rgba(255, 255, 255, 0.5);
+    }
+    
+    .record-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .icon {
+      font-size: 24px;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+      color: white;
+    }
+    
+    /* Close button - barely visible */
+    .close-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      transition: all 0.2s ease;
+      -webkit-app-region: no-drag;
+      z-index: 2;
+    }
+    
+    .close-btn:hover {
+      background: rgba(255, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.4);
+      color: rgba(255, 255, 255, 0.9);
+      transform: scale(1.15);
+    }
+    
+    /* Pulse animation for listening state */
+    body.listening .record-btn {
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { 
+        transform: scale(1);
+        box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+      }
+      50% { 
+        transform: scale(1.08);
+        box-shadow: 0 0 30px rgba(255, 107, 53, 0.7);
+      }
+      100% { 
+        transform: scale(1);
+        box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+      }
+    }
+    
+    /* Spin animation for processing */
+    body.processing .record-btn {
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="waiting">
+  <button id="closeBtn" class="close-btn" title="Close">×</button>
+  <button id="recordBtn" class="record-btn">
+    <span id="icon" class="icon">🎤</span>
+  </button>
+
+  <script>
+    // ============= CONFIGURATION =============
+    // Groq API key for speech-to-text transcription
+    // Get your key at: https://console.groq.com
+    // Cost: ~$0.02 per hour of audio
+    const GROQ_API_KEY = 'YOUR_GROQ_API_KEY_HERE'; // Replace with your API key from https://console.groq.com
+    
+    // Logging helper
+    function log(message, data = null) {
+      if (window.electronAPI && window.electronAPI.log) {
+        window.electronAPI.log(message, data);
+      }
+      console.log(message, data);
+    }
+    
+    function logError(message, error = null) {
+      if (window.electronAPI && window.electronAPI.logError) {
+        window.electronAPI.logError(message, error);
+      }
+      console.error(message, error);
+    }
+    
+    // Log app start
+    log('Voice Recorder started');
+    
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let resetTimeout = null;
+    let isProcessing = false;  // Prevent multiple simultaneous operations
+    let currentStream = null;  // Track current audio stream
+    let errorCount = 0;  // Track consecutive errors
+    const MAX_RECORDING_TIME = 30000;  // 30 seconds max recording
+    let recordingTimeout = null;
+    
+    const recordBtn = document.getElementById('recordBtn');
+    const icon = document.getElementById('icon');
+    const body = document.body;
+    
+    /**
+     * Updates the visual state of the application
+     * 
+     * States:
+     * - 'waiting': Purple background, ready to record
+     * - 'listening': Orange background, actively recording
+     * - 'processing': Blue background, transcribing audio
+     * - 'success': Green background, text copied to clipboard
+     * 
+     * @param {string} state - The state to set
+     */
+    function setState(state) {
+      // Prevent state changes while processing (but allow success/error states)
+      if (isProcessing && state !== 'processing' && state !== 'error' && state !== 'success' && state !== 'waiting') {
+        return;
+      }
+      
+      body.className = state;
+      
+      // Clear any existing timeout
+      if (resetTimeout) {
+        clearTimeout(resetTimeout);
+        resetTimeout = null;
+      }
+      
+      switch(state) {
+        case 'waiting':
+          icon.textContent = '🎤';
+          isProcessing = false;
+          isRecording = false;
+          break;
+        case 'listening':
+          icon.textContent = '👂';
+          break;
+        case 'processing':
+          icon.textContent = '⚡';
+          // isProcessing is managed in transcribeAudio function
+          break;
+        case 'success':
+          icon.textContent = '✓';
+          isProcessing = false;
+          // Auto-reset after 3 seconds (shorter time)
+          resetTimeout = setTimeout(() => {
+            setState('waiting');
+          }, 3000);
+          break;
+        case 'error':
+          icon.textContent = '❌';
+          body.className = 'error';
+          isProcessing = false;
+          // Auto-reset after 2 seconds
+          resetTimeout = setTimeout(() => {
+            setState('waiting');
+          }, 2000);
+          break;
+      }
+    }
+    
+    /**
+     * Initializes audio stream from user's microphone
+     * Requests permission if not already granted
+     * 
+     * @returns {MediaStream|null} Audio stream or null if error
+     */
+    async function initAudio() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        return stream;
+      } catch (err) {
+        logError('Microphone error:', err);
+        return null;
+      }
+    }
+    
+    // Start recording
+    async function startRecording() {
+      // Prevent starting if already recording or processing
+      if (isRecording || isProcessing) {
+        log('Already recording or processing');
+        return;
+      }
+      
+      try {
+        const stream = await initAudio();
+        if (!stream) {
+          setState('error');
+          return;
+        }
+        
+        currentStream = stream;
+        setState('listening');
+        audioChunks = [];
+        
+        // Check supported MIME types - try different formats
+        let mimeType;
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          mimeType = 'audio/ogg;codecs=opus';
+        } else {
+          mimeType = ''; // Let browser choose default
+        }
+        log('Using MIME type:', mimeType || 'default');
+        
+        const recorderOptions = mimeType ? { mimeType } : {};
+        mediaRecorder = new MediaRecorder(stream, recorderOptions);
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunks.push(event.data);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          log('MediaRecorder stopped, chunks:', audioChunks.length);
+          // Only process if we have audio data
+          if (audioChunks.length > 0) {
+            setState('processing');
+            // Use the actual mimeType from the recorder
+            const blobType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: blobType });
+            log('Created blob, size:', audioBlob.size);
+            await transcribeAudio(audioBlob);
+          } else {
+            log('No audio chunks recorded');
+            setState('waiting');
+          }
+          cleanupRecording();
+        };
+        
+        mediaRecorder.onerror = (event) => {
+          logError('MediaRecorder error:', event);
+          setState('error');
+          cleanupRecording();
+        };
+        
+        mediaRecorder.start();
+        isRecording = true;
+        
+        // Auto-stop after max recording time
+        recordingTimeout = setTimeout(() => {
+          if (isRecording) {
+            log('Max recording time reached, stopping...');
+            stopRecording();
+          }
+        }, MAX_RECORDING_TIME);
+        
+      } catch (err) {
+        logError('Failed to start recording:', err);
+        setState('error');
+        cleanupRecording();
+      }
+    }
+    
+    // Stop recording
+    function stopRecording() {
+      if (recordingTimeout) {
+        clearTimeout(recordingTimeout);
+        recordingTimeout = null;
+      }
+      
+      if (mediaRecorder && isRecording) {
+        try {
+          mediaRecorder.stop();
+          isRecording = false;
+        } catch (err) {
+          logError('Error stopping recording:', err);
+          cleanupRecording();
+          setState('error');
+        }
+      }
+    }
+    
+    // Cleanup recording resources
+    function cleanupRecording() {
+      isRecording = false;
+      
+      if (recordingTimeout) {
+        clearTimeout(recordingTimeout);
+        recordingTimeout = null;
+      }
+      
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => {
+          track.stop();
+        });
+        currentStream = null;
+      }
+      
+      if (mediaRecorder) {
+        mediaRecorder = null;
+      }
+      
+      audioChunks = [];
+    }
+    
+    // Force reset everything
+    function forceReset() {
+      log('Force resetting...');
+      cleanupRecording();
+      isProcessing = false;
+      errorCount = 0;
+      setState('waiting');
+    }
+    
+    /**
+     * Sends audio to Groq API for transcription
+     * 
+     * Uses Whisper Large V3 model for high-quality transcription
+     * Automatically copies result to clipboard on success
+     * 
+     * @param {Blob} audioBlob - Recorded audio in webm format
+     */
+    async function transcribeAudio(audioBlob) {
+      // Set processing flag to prevent multiple simultaneous transcriptions
+      isProcessing = true;
+      
+      // Check blob size
+      if (audioBlob.size < 1000) {  // Less than 1KB is probably silence
+        log('Audio too short, skipping transcription');
+        setState('waiting');
+        return;
+      }
+      
+      try {
+        log('Starting transcription');
+        
+// Audio blob is ready for transcription
+        
+        // Convert blob to ensure it's valid
+        const file = new File([audioBlob], 'recording.webm', { type: audioBlob.type || 'audio/webm' });
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('model', 'whisper-large-v3');
+        formData.append('language', 'en');
+        formData.append('temperature', '0');
+        
+        // Add timeout to API call
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+          log('Aborting request due to timeout');
+          controller.abort();
+        }, 15000);  // 15 second timeout
+        
+        log('Sending request to Groq API...');
+        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${GROQ_API_KEY}`
+          },
+          body: formData,
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeout);
+        log('Response received, status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          logError('API Error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        log('Transcription result:', data);
+        const text = data.text || '';
+        
+        if (text && text.trim().length > 0) {
+          log('Transcription text:', text);
+          // Copy to clipboard
+          await navigator.clipboard.writeText(text);
+          
+          // Also send to Electron for system clipboard
+          if (window.electronAPI) {
+            window.electronAPI.copyToClipboard(text);
+          }
+          
+          errorCount = 0;  // Reset error count on success
+          setState('success');
+        } else {
+          log('Empty transcription result');
+          setState('waiting');
+        }
+      } catch (err) {
+        logError('Transcription error:', err);
+        errorCount++;
+        
+        if (err.name === 'AbortError') {
+          logError('Request timeout');
+        }
+        
+        // If too many errors, force reset
+        if (errorCount >= 3) {
+          logError('Too many errors, resetting...');
+          forceReset();
+        } else {
+          setState('error');
+        }
+      } finally {
+        isProcessing = false;
+      }
+    }
+    
+    // Toggle recording
+    function toggleRecording() {
+      // If processing, force reset instead
+      if (isProcessing) {
+        forceReset();
+        return;
+      }
+      
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+    
+    // Button click handler
+    recordBtn.addEventListener('click', toggleRecording);
+    
+    // Close button handler
+    const closeBtn = document.getElementById('closeBtn');
+    closeBtn.addEventListener('click', () => {
+      if (window.electronAPI) {
+        window.electronAPI.closeApp();
+      } else {
+        window.close();
+      }
+    });
+    
+    // Listen for Electron IPC events (F8 key)
+    if (window.electronAPI) {
+      window.electronAPI.onToggleRecording(() => {
+        toggleRecording();
+      });
+    }
+    
+    // Add Escape key to force reset
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        forceReset();
+      }
+    });
+    
+    // Long press (hold for 2 seconds) to force reset
+    let pressTimer;
+    recordBtn.addEventListener('mousedown', () => {
+      pressTimer = setTimeout(() => {
+        forceReset();
+        // Visual feedback
+        recordBtn.style.transform = 'scale(0.8)';
+        setTimeout(() => {
+          recordBtn.style.transform = '';
+        }, 200);
+      }, 2000);
+    });
+    
+    recordBtn.addEventListener('mouseup', () => {
+      clearTimeout(pressTimer);
+    });
+    
+    recordBtn.addEventListener('mouseleave', () => {
+      clearTimeout(pressTimer);
+    });
+    
+    // Request microphone permission on load
+    initAudio();
+    
+    // Add keyboard shortcut to open logs folder (Ctrl+L)
+    document.addEventListener('keydown', async (e) => {
+      if (e.ctrlKey && e.key === 'l') {
+        if (window.electronAPI) {
+          const logsPath = await window.electronAPI.openLogsFolder();
+          log('Opened logs folder:', logsPath);
+        }
+      }
+    });
+    
+    // Log initial info
+    log('Voice Recorder initialized');
+    log('Keyboard shortcuts:');
+    log('  F8: Toggle recording');
+    log('  Escape: Force reset');
+    log('  Ctrl+L: Open logs folder');
+    log('  Long press record button (2s): Force reset');
+  </script>
+</body>
+</html>

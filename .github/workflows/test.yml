@@ -1,0 +1,148 @@
+# Automated Testing for Voice Recorder
+# For agents: This runs automatically on every push and PR
+
+name: Test Voice Recorder
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linter
+      run: npm run lint
+      continue-on-error: true
+    
+    - name: Run all tests
+      run: npm test
+      env:
+        CI: true
+        SILENT_TESTS: true
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+      continue-on-error: true
+    
+    - name: Build application
+      run: npm run build-all
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: voice-recorder-${{ matrix.node-version }}
+        path: |
+          dist/*.exe
+          coverage/
+    
+    - name: Test installation
+      run: |
+        # Test that the app was built
+        if (Test-Path "dist/VoiceRecorder-Setup.exe") {
+          Write-Host "✓ Installer built successfully"
+        } else {
+          Write-Host "✗ Installer build failed"
+          exit 1
+        }
+        
+        if (Test-Path "dist/VoiceRecorder-Portable.exe") {
+          Write-Host "✓ Portable built successfully"
+        } else {
+          Write-Host "✗ Portable build failed"
+          exit 1
+        }
+      shell: pwsh
+
+  performance:
+    runs-on: windows-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run performance tests
+      run: |
+        npm start &
+        sleep 5
+        # Check memory usage
+        $process = Get-Process -Name "VoiceRecorder" -ErrorAction SilentlyContinue
+        if ($process) {
+          $memory = $process.WorkingSet64 / 1MB
+          if ($memory -lt 100) {
+            Write-Host "✓ Memory usage OK: $memory MB"
+          } else {
+            Write-Host "✗ Memory usage high: $memory MB"
+          }
+        }
+      shell: pwsh
+      continue-on-error: true
+
+  security:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run security audit
+      run: npm audit --audit-level=moderate
+      continue-on-error: true
+    
+    - name: Check for secrets
+      run: |
+        # Check for API keys in code
+        $files = Get-ChildItem -Recurse -Include *.js,*.cjs,*.html | Select-String -Pattern "gsk_|sk-|api_key"
+        if ($files) {
+          Write-Host "⚠ Potential secrets found:"
+          $files
+        } else {
+          Write-Host "✓ No secrets detected"
+        }
+      shell: pwsh
+
+# Notification for test results
+  notify:
+    needs: [test, performance, security]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify success
+      if: success()
+      run: echo "✅ All tests passed!"
+    
+    - name: Notify failure
+      if: failure()
+      run: echo "❌ Tests failed - check logs"

@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+out/
+*.exe
+
+# Logs
+*.log
+log-*.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Test
+test-results/
+*.test.js.snap
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+nul
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Electron specific
+electron-builder.yml.backup

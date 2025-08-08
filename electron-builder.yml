@@ -1,0 +1,67 @@
+# Electron Builder Configuration
+# Following Electron Forge best practices for icons
+# https://www.electronforge.io/guides/create-and-add-icons
+
+appId: com.daniel.eco
+productName: Eco
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - main.cjs
+  - preload.cjs
+  - recorder.html
+  - simple-logger.cjs
+  - build/**/*
+
+# Windows Configuration
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+  executableName: Eco
+  requestedExecutionLevel: asInvoker
+  verifyUpdateCodeSignature: false
+  signAndEditExecutable: false
+  forceCodeSigning: false
+
+# NSIS Installer Configuration
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  differentialPackage: false
+  displayLanguageSelector: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  artifactName: Eco-Setup.exe
+  shortcutName: Eco
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Portable Configuration
+portable:
+  artifactName: Eco-Portable.exe
+  useZip: false
+  unicode: true
+  unpackDirName: false
+  requestExecutionLevel: user
+
+# macOS Configuration (for future)
+mac:
+  icon: build/icon.icns
+  category: public.app-category.productivity
+
+# Linux Configuration (for future)
+linux:
+  icon: build
+  category: Utility
+  desktop:
+    Name: Eco
+    Comment: Speech-to-text voice input tool
+    Categories: Utility;Audio;
